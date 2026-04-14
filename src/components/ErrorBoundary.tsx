@@ -1,8 +1,8 @@
-import React, { ErrorInfo } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
 interface Props {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 interface State {
@@ -31,20 +31,24 @@ class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     const state = (this as any).state;
-    const props = (this as any).props;
-
     if (state.hasError) {
       let errorMessage = "An unexpected error occurred.";
       
       try {
         if (state.error?.message) {
-          const parsed = JSON.parse(state.error.message);
-          if (parsed.error && parsed.error.includes('permission-denied')) {
-            errorMessage = "You don't have permission to access this data. Please try logging in again.";
+          const msg = state.error.message;
+          if (msg.includes('permission-denied') || msg.includes('Missing or insufficient permissions')) {
+            errorMessage = "You don't have permission to access this data. Please ensure your Firestore Security Rules are deployed.";
+          } else if (msg.includes('api-key-not-valid')) {
+            errorMessage = "Invalid Firebase API Key. Please check your Secrets configuration.";
+          } else if (msg.includes('network-error')) {
+            errorMessage = "A network error occurred. Please check your internet connection.";
+          } else {
+            errorMessage = msg;
           }
         }
       } catch (e) {
-        // Not a JSON error
+        // Fallback
       }
 
       return (
@@ -67,7 +71,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return props.children;
+    return (this as any).props.children;
   }
 }
 

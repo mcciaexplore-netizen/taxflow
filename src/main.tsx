@@ -4,6 +4,11 @@ import App from './App.tsx';
 import './index.css';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// Shim process for libraries that expect it in the browser
+if (typeof window !== 'undefined' && !window.process) {
+  (window as any).process = { env: {} };
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
