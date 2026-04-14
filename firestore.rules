@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - The unique ID of the user
+    //   - email: string (required) - The user's email address
+    //   - displayName: string - The user's full name
+    //   - role: string (required) - One of: 'client', 'staff', 'admin'
+    //   - phoneNumber: string - The user's phone number
+    //   - createdAt: timestamp - When the profile was created
+    //
+    // Collection: tax_returns
+    // Document ID: {returnId}
+    // Fields:
+    //   - userId: string (required) - The ID of the client who owns this return
+    //   - financialYear: string (required) - The assessment year (e.g., '2025-26')
+    //   - entityType: string (required) - The type of entity (e.g., 'Individual')
+    //   - status: string (required) - One of: 'New', 'In Progress', 'Query Raised', 'Review', 'Filed'
+    //   - assignedStaffId: string - The ID of the staff member assigned to this case
+    //   - questionnaire: map - The data from the onboarding form
+    //   - computationSummary: map - The tax computation results
+    //   - createdAt: timestamp - When the case was created
+    //   - updatedAt: timestamp - When the case was last updated
+    //
+    // Subcollection: tax_returns/{returnId}/documents
+    // Fields:
+    //   - userId: string (required) - The ID of the client who owns the return
+    //   - uploaderId: string (required) - The ID of the person who uploaded the document
+    //   - returnId: string (required) - The parent return ID
+    //   - name: string (required) - The filename
+    //   - type: string - The document type (e.g., 'pan', 'form16')
+    //   - url: string (required) - The storage URL
+    //   - uploadedAt: timestamp - When the document was uploaded
+    //
+    // Subcollection: tax_returns/{returnId}/queries
+    // Fields:
+    //   - returnId: string (required) - The parent return ID
+    //   - senderId: string (required) - The ID of the person sending the message
+    //   - senderRole: string (required) - The role of the sender
+    //   - senderName: string (required) - The name of the sender
+    //   - message: string (required) - The message content
+    //   - timestamp: timestamp - When the message was sent
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (getUserData().role == 'admin' || 
+         (request.auth.token.email == "gitajojareai@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (getUserData().role == 'staff' || isAdmin());
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             data.role in ['client', 'staff', 'admin'] &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() < 20));
+    }
+
+    function isValidTaxReturn(data) {
+      return data.keys().hasAll(['userId', 'financialYear', 'status']) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.financialYear is string && data.financialYear.size() > 0 && data.financialYear.size() < 20 &&
+             data.status in ['New', 'In Progress', 'Query Raised', 'Review', 'Filed'] &&
+             (!('entityType' in data) || (data.entityType is string && data.entityType.size() < 50));
+    }
+
+    function isValidDocument(data) {
+      return data.keys().hasAll(['userId', 'uploaderId', 'returnId', 'name', 'url']) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.uploaderId is string && data.uploaderId == request.auth.uid &&
+             data.returnId is string && data.returnId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 255 &&
+             data.url is string && data.url.matches("^https://.*");
+    }
+
+    function isValidQuery(data) {
+      return data.keys().hasAll(['returnId', 'senderId', 'message', 'senderRole', 'senderName']) &&
+             data.returnId is string && data.returnId.size() > 0 &&
+             data.senderId is string && data.senderId == request.auth.uid &&
+             data.senderRole is string && data.senderRole in ['client', 'staff', 'admin'] &&
+             data.senderName is string && data.senderName.size() < 100 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isStaff();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    (isOwner(userId) && request.resource.data.role == 'client' || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+    }
+
+    match /tax_returns/{returnId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isStaff());
+      allow create: if isAuthenticated() && isValidTaxReturn(request.resource.data) && 
+                    (request.auth.uid == request.resource.data.userId || isAdmin());
+      allow update: if isAuthenticated() && isValidTaxReturn(request.resource.data) && 
+                    (request.auth.uid == resource.data.userId || isStaff());
+      allow delete: if isAdmin();
+
+      match /documents/{docId} {
+        allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isStaff());
+        allow create: if isAuthenticated() && isValidDocument(request.resource.data) &&
+                      (request.auth.uid == request.resource.data.uploaderId) &&
+                      (request.auth.uid == request.resource.data.userId || isStaff());
+        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.uploaderId || isAdmin());
+      }
+
+      match /queries/{queryId} {
+        allow read: if isAuthenticated() && 
+                    (request.auth.uid == get(/databases/$(database)/documents/tax_returns/$(returnId)).data.userId || isStaff());
+        allow create: if isAuthenticated() && isValidQuery(request.resource.data) &&
+                      (request.auth.uid == get(/databases/$(database)/documents/tax_returns/$(returnId)).data.userId || isStaff());
+      }
+    }
+  }
+}

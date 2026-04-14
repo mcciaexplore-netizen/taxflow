@@ -1,0 +1,78 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["client", "staff", "admin"] },
+        "phoneNumber": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "TaxReturn": {
+      "title": "Tax Return",
+      "description": "ITR processing data and status",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "financialYear": { "type": "string" },
+        "status": { "type": "string", "enum": ["New", "In Progress", "Query Raised", "Review", "Filed"] },
+        "assignedStaffId": { "type": "string" },
+        "questionnaire": { "type": "object" },
+        "computationSummary": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "financialYear", "status"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Metadata for uploaded tax documents",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "returnId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "returnId", "name", "url"]
+    },
+    "Query": {
+      "title": "Query",
+      "description": "Two-way communication between client and staff",
+      "type": "object",
+      "properties": {
+        "returnId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["returnId", "senderId", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/tax_returns/{returnId}": {
+      "schema": "TaxReturn",
+      "description": "Tax return cases"
+    },
+    "/tax_returns/{returnId}/documents/{docId}": {
+      "schema": "Document",
+      "description": "Documents associated with a return"
+    },
+    "/tax_returns/{returnId}/queries/{queryId}": {
+      "schema": "Query",
+      "description": "Queries associated with a return"
+    }
+  }
+}
